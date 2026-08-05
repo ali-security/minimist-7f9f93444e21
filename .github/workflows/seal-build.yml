@@ -1,0 +1,67 @@
+name: seal-build
+
+# Authored by agentic-sealer: upstream minimist 1.2.5 has NO GitHub Actions
+# workflow (only a legacy .travis.yml), so this workflow is written from scratch
+# to run the package's real test suite (tap test/*.js) across the upstream Node
+# matrix and to build+upload the published npm tarball.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['13', '0.12', '0.10', '0.8']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nvm
+        run: |
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+
+      - name: Install dependencies under Node 13
+        run: |
+          export NVM_DIR="$HOME/.nvm"
+          . "$NVM_DIR/nvm.sh"
+          nvm install 13
+          nvm use 13
+          node --version
+          npm --version
+          npm install
+
+      - name: Provision matrix Node ${{ matrix.node }}
+        run: |
+          export NVM_DIR="$HOME/.nvm"
+          . "$NVM_DIR/nvm.sh"
+          nvm install ${{ matrix.node }}
+
+      - name: Run tests on Node ${{ matrix.node }}
+        run: |
+          export NVM_DIR="$HOME/.nvm"
+          . "$NVM_DIR/nvm.sh"
+          nvm use ${{ matrix.node }}
+          node --version
+          # tap 0.4 is pure JS and runs on ancient Node; the legacy Node 0.8/0.10/0.12
+          # bundled npm speaks TLS 1.0 only and cannot reach the registry, so we reuse
+          # the node_modules installed under Node 13 and invoke the tap binary directly.
+          node node_modules/.bin/tap test/*.js
+
+      - name: Pack npm tarball (Node 13 leg only)
+        if: matrix.node == '13'
+        run: |
+          export NVM_DIR="$HOME/.nvm"
+          . "$NVM_DIR/nvm.sh"
+          nvm use 13
+          npm pack
+          ls -l minimist-1.2.5.tgz
+
+      - name: Upload tarball artifact (Node 13 leg only)
+        if: matrix.node == '13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: minimist-tarball
+          path: minimist-1.2.5.tgz
+          if-no-files-found: error
